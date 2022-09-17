@@ -59,12 +59,12 @@ You need some steps to deply this note book to Workbench service of Vertex AI:
 
 1. Auth to GCP Console.
 2. Create your Proyect and save your PROJECT_ID.
-3. Create a Bucket and upload your dataset. In the example 'data.csv' CSV dataset.
+3. Create a Bucket and upload your dataset. In the example 'heart.csv' CSV dataset.
 4. Create a Notebook with the Tensorflow Enterprise 2.3 Environment(4 vCPUs, 15GB RAM)
 5. Upload your notebook tf-chll-mle-hearts in folder 'vertexai_pipelines'.
 6. Select Run and Run all cells.
 7. In the last cell, in the output you'll see the link to the Pipeline dashboard.
 
-Note: It's probably to get an error in the deploy pipe, because we don't active the billing of project. 
+Note: It's probably to get an error in the deploy pipe, because I have an error with the preconditions in the project creation. Need to fix it!
 
 ![Heart Disease model MLOps with Vertex AI pipelines](https://github.com/jmauriciopucp/rimac-challenge-mle/blob/develop/images/vertexai_pipeline_heartdisease_model.PNG)
