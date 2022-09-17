@@ -1,0 +1,54 @@
+name: Eval model
+inputs:
+- {name: test_set, type: Dataset}
+- {name: lgbm_heartds_model, type: Model}
+- {name: thresholds_dict_str, type: String}
+outputs:
+- {name: metrics, type: ClassificationMetrics}
+- {name: kpi, type: Metrics}
+- {name: deploy, type: String}
+implementation:
+  container:
+    image: gcr.io/deeplearning-platform-release/tf2-cpu.2-3:latest
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'scikit-learn' 'lightgbm' 'kfp==1.8.9' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef eval_model(\n    test_set:  Input[Dataset],\n    lgbm_heartds_model:\
+      \ Input[Model],\n    thresholds_dict_str: str,\n    metrics: Output[ClassificationMetrics],\n\
+      \    kpi: Output[Metrics]\n) -> NamedTuple(\"output\", [(\"deploy\", str)]):\n\
+      \n    from joblib import load\n    from lightgbm import LGBMClassifier\n   \
+      \ import pandas as pd\n    import logging\n    from sklearn.metrics import roc_curve,\
+      \ confusion_matrix, accuracy_score\n    import json\n    import typing\n\n\n\
+      \    def threshold_check(val1, val2):\n        cond = \"false\"\n        if\
+      \ val1 >= val2 :\n            cond = \"true\"\n        return cond\n\n    df\
+      \ = pd.read_csv(test_set.path+\".csv\")\n    model = load(open(lgbm_heartds_model.path\
+      \ + \".pkl\",'rb'))\n\n    x_test = df.drop(columns=[\"target\"])\n    y_test\
+      \ = df.target\n    y_pred = model.predict(x_test)\n\n    probs =  model.predict_proba(df.drop(columns=[\"\
+      target\"]))[:, 1]\n    fpr, tpr, thresholds = roc_curve(\n         y_true=df.target.to_numpy(),\
+      \ y_score=probs, pos_label=True\n    )\n    metrics.log_roc_curve(fpr.tolist(),\
+      \ tpr.tolist(), thresholds.tolist())  \n\n    metrics.log_confusion_matrix(\n\
+      \       [\"False\", \"True\"],\n       confusion_matrix(\n           df.target,\
+      \ y_pred\n       ).tolist(), \n    )\n\n    accuracy = accuracy_score(df.target,\
+      \ y_pred.round())\n    thresholds_dict = json.loads(thresholds_dict_str)\n \
+      \   lgbm_heartds_model.metadata[\"accuracy\"] = float(accuracy)\n    kpi.log_metric(\"\
+      accuracy\", float(accuracy))\n    deploy = threshold_check(float(accuracy),\
+      \ int(thresholds_dict['roc']))\n    return (deploy,)\n\n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - eval_model

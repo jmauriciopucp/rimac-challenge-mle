@@ -1,0 +1,489 @@
+{
+  "pipelineSpec": {
+    "components": {
+      "comp-condition-deploy-heartds-1": {
+        "dag": {
+          "tasks": {
+            "deploy-model": {
+              "cachingOptions": {
+                "enableCache": true
+              },
+              "componentRef": {
+                "name": "comp-deploy-model"
+              },
+              "inputs": {
+                "artifacts": {
+                  "model": {
+                    "componentInputArtifact": "pipelineparam--train-model-model"
+                  }
+                },
+                "parameters": {
+                  "project": {
+                    "componentInputParameter": "pipelineparam--project"
+                  },
+                  "region": {
+                    "componentInputParameter": "pipelineparam--region"
+                  }
+                }
+              },
+              "taskInfo": {
+                "name": "deploy-model"
+              }
+            }
+          }
+        },
+        "inputDefinitions": {
+          "artifacts": {
+            "pipelineparam--train-model-model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "pipelineparam--eval-model-deploy": {
+              "type": "STRING"
+            },
+            "pipelineparam--project": {
+              "type": "STRING"
+            },
+            "pipelineparam--region": {
+              "type": "STRING"
+            }
+          }
+        }
+      },
+      "comp-deploy-model": {
+        "executorLabel": "exec-deploy-model",
+        "inputDefinitions": {
+          "artifacts": {
+            "model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "project": {
+              "type": "STRING"
+            },
+            "region": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "vertex_endpoint": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "vertex_model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-eval-model": {
+        "executorLabel": "exec-eval-model",
+        "inputDefinitions": {
+          "artifacts": {
+            "lgbm_heartds_model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "test_set": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "thresholds_dict_str": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "kpi": {
+              "artifactType": {
+                "schemaTitle": "system.Metrics",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "metrics": {
+              "artifactType": {
+                "schemaTitle": "system.ClassificationMetrics",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "deploy": {
+              "type": "STRING"
+            }
+          }
+        }
+      },
+      "comp-load-data": {
+        "executorLabel": "exec-load-data",
+        "inputDefinitions": {
+          "parameters": {
+            "url": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "ds_test": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "ds_train": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-train-model": {
+        "executorLabel": "exec-train-model",
+        "inputDefinitions": {
+          "artifacts": {
+            "dataset": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      }
+    },
+    "deploymentSpec": {
+      "executors": {
+        "exec-deploy-model": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "deploy_model"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'sklearn' 'kfp' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef deploy_model(\n    model: Input[Model],\n    project: str,\n    region: str,\n    #serving_container_image_uri : str, \n    vertex_endpoint: Output[Artifact],\n    vertex_model: Output[Model]\n):\n    from google.cloud import aiplatform\n    aiplatform.init(project=project, location=region)\n\n    DISPLAY_NAME  = \"heartds\"\n    MODEL_NAME = \"heartds-lgbm\"\n    ENDPOINT_NAME = \"heartds-predict\"\n\n    def create_endpoint():\n        endpoints = aiplatform.Endpoint.list(\n        filter='display_name=\"{}\"'.format(ENDPOINT_NAME),\n        order_by='create_time desc',\n        project=project, \n        location=region,\n        )\n        if len(endpoints) > 0:\n            endpoint = endpoints[0]  # most recently created\n        else:\n            endpoint = aiplatform.Endpoint.create(\n            display_name=ENDPOINT_NAME, project=project, location=region\n        )\n    endpoint = create_endpoint()   \n\n\n    #Import a model programmatically\n    '''\n    model_upload = aiplatform.Model.upload(\n        display_name = DISPLAY_NAME, \n        artifact_uri = model.uri.replace(\"model\", \"\"),\n        serving_container_image_uri =  serving_container_image_uri,\n        serving_container_health_route=f\"/v1/models/{MODEL_NAME}\",\n        serving_container_predict_route=f\"/v1/models/{MODEL_NAME}:predict\",\n        serving_container_environment_variables={\n        \"MODEL_NAME\": MODEL_NAME,\n    },       \n    )\n    model_deploy = model_upload.deploy(\n        machine_type=\"n1-standard-4\", \n        endpoint=endpoint,\n        traffic_split={\"0\": 100},\n        deployed_model_display_name=DISPLAY_NAME,\n    )\n    '''\n    model_deploy = model.deploy(\n        machine_type=\"n1-standard-4\", \n        endpoint=endpoint,\n        traffic_split={\"0\": 100},\n        deployed_model_display_name=DISPLAY_NAME,\n    )\n\n    # Save data to the output params\n    vertex_model.uri = model_deploy.resource_name\n\n"
+            ],
+            "image": "gcr.io/deeplearning-platform-release/tf2-cpu.2-3:latest"
+          }
+        },
+        "exec-eval-model": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "eval_model"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'scikit-learn' 'lightgbm' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef eval_model(\n    test_set:  Input[Dataset],\n    lgbm_heartds_model: Input[Model],\n    thresholds_dict_str: str,\n    metrics: Output[ClassificationMetrics],\n    kpi: Output[Metrics]\n) -> NamedTuple(\"output\", [(\"deploy\", str)]):\n\n    from joblib import load\n    from lightgbm import LGBMClassifier\n    import pandas as pd\n    import logging\n    from sklearn.metrics import roc_curve, confusion_matrix, accuracy_score\n    import json\n    import typing\n\n\n    def threshold_check(val1, val2):\n        cond = \"false\"\n        if val1 >= val2 :\n            cond = \"true\"\n        return cond\n\n    df = pd.read_csv(test_set.path+\".csv\")\n    model = load(open(lgbm_heartds_model.path + \".pkl\",'rb'))\n\n    x_test = df.drop(columns=[\"target\"])\n    y_test = df.target\n    y_pred = model.predict(x_test)\n\n    probs =  model.predict_proba(df.drop(columns=[\"target\"]))[:, 1]\n    fpr, tpr, thresholds = roc_curve(\n         y_true=df.target.to_numpy(), y_score=probs, pos_label=True\n    )\n    metrics.log_roc_curve(fpr.tolist(), tpr.tolist(), thresholds.tolist())  \n\n    metrics.log_confusion_matrix(\n       [\"False\", \"True\"],\n       confusion_matrix(\n           df.target, y_pred\n       ).tolist(), \n    )\n\n    accuracy = accuracy_score(df.target, y_pred.round())\n    thresholds_dict = json.loads(thresholds_dict_str)\n    lgbm_heartds_model.metadata[\"accuracy\"] = float(accuracy)\n    kpi.log_metric(\"accuracy\", float(accuracy))\n    deploy = threshold_check(float(accuracy), int(thresholds_dict['roc']))\n    return (deploy,)\n\n"
+            ],
+            "image": "gcr.io/deeplearning-platform-release/tf2-cpu.2-3:latest"
+          }
+        },
+        "exec-load-data": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "load_data"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'pyarrow' 'scikit-learn==1.0.0' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef load_data(\n    url: str,\n    ds_train: Output[Dataset],\n    ds_test: Output[Dataset],\n):\n    import pandas as pd\n    import numpy as np\n    from sklearn.model_selection import train_test_split\n\n    df = pd.read_csv(url)   \n\n    df['target'] = df['HeartDisease']\n    df = df.drop(['HeartDisease'], axis=1)\n\n    train, test = train_test_split(df, test_size=0.3, random_state=42)\n    train.to_csv(ds_train.path + \".csv\" , index=False)\n    test.to_csv(ds_test.path + \".csv\" , index=False)\n\n"
+            ],
+            "image": "python:3.9"
+          }
+        },
+        "exec-train-model": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "train_model"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'scikit-learn' 'lightgbm' 'joblib' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef train_model(\n    dataset:  Input[Dataset],\n    model: Output[Model], \n):\n\n    import joblib\n    from sklearn.compose import make_column_transformer\n    from sklearn.preprocessing import OneHotEncoder\n    from sklearn.model_selection import train_test_split\n    from sklearn.pipeline import make_pipeline\n    from lightgbm import LGBMClassifier\n    import pandas as pd\n\n    df = pd.read_csv(dataset.path+\".csv\")\n    #getting numerical and categorical variables\n    numerical= df.drop(['target'], axis=1).select_dtypes('number').columns\n    categorical = df.select_dtypes('object').columns\n\n    #One-Hot encoding on categorical data\n    ohe = OneHotEncoder()\n    ct = make_column_transformer((ohe, categorical),remainder='passthrough')\n\n    X_train = df.drop(columns=[\"target\"])\n    y_train = df.target\n\n    #LightGBM classifier object\n    lgbmc = LGBMClassifier(random_state=0)\n\n    #define pipe to avoid data leakage\n    pipe = make_pipeline(ct, lgbmc)\n    pipe.fit(X_train, y_train)\n\n    model.metadata[\"framework\"] = \"LGBM\"\n    #save model into pickle file\n    joblib.dump(pipe, model.path + f\".pkl\")\n\n"
+            ],
+            "image": "gcr.io/deeplearning-platform-release/tf2-cpu.2-3:latest"
+          }
+        }
+      }
+    },
+    "pipelineInfo": {
+      "name": "pipeline-heartds"
+    },
+    "root": {
+      "dag": {
+        "outputs": {
+          "artifacts": {
+            "eval-model-kpi": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "kpi",
+                  "producerSubtask": "eval-model"
+                }
+              ]
+            },
+            "eval-model-metrics": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "metrics",
+                  "producerSubtask": "eval-model"
+                }
+              ]
+            }
+          }
+        },
+        "tasks": {
+          "condition-deploy-heartds-1": {
+            "componentRef": {
+              "name": "comp-condition-deploy-heartds-1"
+            },
+            "dependentTasks": [
+              "eval-model",
+              "train-model"
+            ],
+            "inputs": {
+              "artifacts": {
+                "pipelineparam--train-model-model": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "model",
+                    "producerTask": "train-model"
+                  }
+                }
+              },
+              "parameters": {
+                "pipelineparam--eval-model-deploy": {
+                  "taskOutputParameter": {
+                    "outputParameterKey": "deploy",
+                    "producerTask": "eval-model"
+                  }
+                },
+                "pipelineparam--project": {
+                  "componentInputParameter": "project"
+                },
+                "pipelineparam--region": {
+                  "componentInputParameter": "region"
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "condition-deploy-heartds-1"
+            },
+            "triggerPolicy": {
+              "condition": "inputs.parameters['pipelineparam--eval-model-deploy'].string_value == 'true'"
+            }
+          },
+          "eval-model": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-eval-model"
+            },
+            "dependentTasks": [
+              "load-data",
+              "train-model"
+            ],
+            "inputs": {
+              "artifacts": {
+                "lgbm_heartds_model": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "model",
+                    "producerTask": "train-model"
+                  }
+                },
+                "test_set": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "ds_test",
+                    "producerTask": "load-data"
+                  }
+                }
+              },
+              "parameters": {
+                "thresholds_dict_str": {
+                  "componentInputParameter": "thresholds_dict_str"
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "eval-model"
+            }
+          },
+          "load-data": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-load-data"
+            },
+            "inputs": {
+              "parameters": {
+                "url": {
+                  "componentInputParameter": "url"
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "load-data"
+            }
+          },
+          "train-model": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-train-model"
+            },
+            "dependentTasks": [
+              "load-data"
+            ],
+            "inputs": {
+              "artifacts": {
+                "dataset": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "ds_train",
+                    "producerTask": "load-data"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "train-model"
+            }
+          }
+        }
+      },
+      "inputDefinitions": {
+        "parameters": {
+          "api_endpoint": {
+            "type": "STRING"
+          },
+          "display_name": {
+            "type": "STRING"
+          },
+          "project": {
+            "type": "STRING"
+          },
+          "region": {
+            "type": "STRING"
+          },
+          "serving_container_image_uri": {
+            "type": "STRING"
+          },
+          "thresholds_dict_str": {
+            "type": "STRING"
+          },
+          "url": {
+            "type": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "eval-model-kpi": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "eval-model-metrics": {
+            "artifactType": {
+              "schemaTitle": "system.ClassificationMetrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "schemaVersion": "2.0.0",
+    "sdkVersion": "kfp-1.8.9"
+  },
+  "runtimeConfig": {
+    "gcsOutputDirectory": "gs://mle-rimac-heartdisease-bucket/pipeline_root_heartds/",
+    "parameters": {
+      "api_endpoint": {
+        "stringValue": "europe-west1-aiplatform.googleapis.com"
+      },
+      "display_name": {
+        "stringValue": "pipeline-heartds-job20220917002418"
+      },
+      "project": {
+        "stringValue": "mle-rimac-heartdisease"
+      },
+      "region": {
+        "stringValue": "europe-west1"
+      },
+      "serving_container_image_uri": {
+        "stringValue": "europe-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.0-24:latest"
+      },
+      "thresholds_dict_str": {
+        "stringValue": "{\"roc\":0.8}"
+      },
+      "url": {
+        "stringValue": "gs://mle-rimac-heartdisease-bucket/heart.csv"
+      }
+    }
+  }
+}
