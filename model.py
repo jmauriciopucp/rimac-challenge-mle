@@ -32,7 +32,6 @@ lgbmc = LGBMClassifier(random_state=0)
 #define pipe to avoid data leakage
 pipe = make_pipeline(ct, lgbmc)
 pipe.fit(X_train, y_train)
-pipe.fit(X_train, y_train)
 pipe.score(X_test, y_test)
 y_pred = pipe.predict_proba(X_test)
 
