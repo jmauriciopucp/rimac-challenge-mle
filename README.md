@@ -67,4 +67,4 @@ You need some steps to deply this note book to Workbench service of Vertex AI:
 
 Note: It's probably to get an error in the deploy pipe, because we don't active the billing of project. 
 
-![alt text](http://url/to/img.png)
+![Heart Disease model MLOps with Vertex AI pipelines](https://github.com/jmauriciopucp/rimac-challenge-mle/blob/develop/images/vertexai_pipeline_heartdisease_model.PNG)
